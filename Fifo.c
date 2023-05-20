@@ -8,6 +8,8 @@ izvesti i blokiranje procesa za pun i prazan bafer
 zastiti deljeni resurs to jest fifo buffer semaforom da ne bi doslo do hazarda
 */
 
+//GIT COMMIT 2 TEST
+
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/module.h>
