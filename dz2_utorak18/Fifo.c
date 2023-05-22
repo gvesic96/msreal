@@ -20,9 +20,14 @@ zastiti deljeni resurs to jest fifo buffer semaforom da ne bi doslo do hazarda
 #include <linux/errno.h>
 #include <linux/device.h>
 
+#include <linux/semaphore.h>
+
+//needed for blocking
 #include <linux/wait.h>
 DECLARE_WAIT_QUEUE_HEAD(readQ);
 DECLARE_WAIT_QUEUE_HEAD(writeQ);
+
+struct semaphore sem;
 
 #define BUFF_SIZE 20
 #define BUFF_SIZE_IN 200
@@ -81,11 +86,21 @@ ssize_t fifo_read(struct file *pfile, char __user *buffer, size_t length, loff_t
 		return 0;
 	}
 
-	//ukoliko nista nije upisano blokira se u ovoj liniji
-	//proces se smesta u red cekanja za citanje readQ
-	if(wait_event_interruptible(readQ,(pos>0)))
+	if(down_interruptible(&sem))
 		return -ERESTARTSYS;
-
+	while(pos == 0)
+	{
+		up(&sem);
+		/*Ukoliko nista nije upisano proces se blokira u ovoj liniji i smestau red cekanja
+		za citanje readQ */
+		if(wait_event_interruptible(readQ,(pos>0)))
+			return -ERESTARTSYS;
+		/*Nakon budjenja procesa koji cekaju u redu za cigtanje readQ ova funkcija
+		nastavlja da se izvrsava odavde. Proces citanja se budi na kraju funkcije za upis,
+		gde se poziva funkcija za budjenje procesa citanja wake_up_interruptible(&readQ)*/
+		if(down_interruptible(&sem))
+			return -ERESTARTSYS;
+	}//while(pos==0)
 	if(pos > 0)
 	{
 		//pos--; dekrementiranje ostalo od lifo buffera
@@ -117,6 +132,7 @@ ssize_t fifo_read(struct file *pfile, char __user *buffer, size_t length, loff_t
 			printk(KERN_WARNING "Fifo is empty\n"); 
 	}
 
+	up(&sem);
 	wake_up_interruptible(&writeQ);//ova linija budi procese koji cekaju u redu za upis
 	return len;
 }
@@ -131,8 +147,8 @@ ssize_t fifo_write(struct file *pfile, const char __user *buffer, size_t length,
 	int i, j, k;
 
 	ret = copy_from_user(buff, buffer, length);//successful execution returns 0
-	//buff je kernel niz gde se smesta
-	//buffer je niz u kurisnickom prostoru, length je duzina niza koji se kopira
+	/*buff je kernel niz gde se smesta buffer je niz u kurisnickom prostoru,
+	length je duzina niza koji se kopira*/
 
 
 	if(ret)
@@ -158,10 +174,22 @@ ssize_t fifo_write(struct file *pfile, const char __user *buffer, size_t length,
 		}
 	}
 
-	//ukoliko je buffer pun, proces smestamo u red cekanja za upis, writeQ
-	if(wait_event_interruptible(writeQ,(pos<16)))
-		return -ERESTARTSYS;
 
+	if(down_interruptible(&sem))
+		return -ERESTARTSYS;
+	while(pos == 10)
+	{
+		/*ukoliko je buffer pun, proces smestamo u red cekanja za upis, writeQ i blokira se
+		u ovoj liniji*/
+		if(wait_event_interruptible(writeQ,(pos<16)))
+			return -ERESTARTSYS;
+		/*
+		Kada se procita podatak i oslobodi mesto iz buffera proces se budi na kraju read
+		funkcije sa wake_up_interruptible(writeQ) i nastavlja odavde upis
+		*/
+		if(down_interruptible(&sem))
+			return -ERESTARTSYS;
+	}
 
 	if(pos<16)
 	{
@@ -218,6 +246,7 @@ ssize_t fifo_write(struct file *pfile, const char __user *buffer, size_t length,
 
 	label1:
 
+	up(&sem);
 	//ovom linijom budimo procese u redu cekanja za citanje, readQ da oslobode mesto
 	wake_up_interruptible(&readQ);
 
@@ -229,6 +258,7 @@ static int __init fifo_init(void)
    int ret = 0;
 	int i=0;
 
+	sema_init(&sem,1);//semaphore initialization
 
 	//Initialize array
 	for (i=0; i<16; i++)
@@ -248,7 +278,7 @@ static int __init fifo_init(void)
       goto fail_0;
    }
    printk(KERN_INFO "class created\n");
-   
+
    my_device = device_create(my_class, NULL, my_dev_id, NULL, "fifo");//ovde kreira node fajl
    if (my_device == NULL){
       printk(KERN_ERR "failed to create device\n");
