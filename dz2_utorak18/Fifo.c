@@ -7,6 +7,10 @@ oznacava da se iscita n brojeva u fifo maniru
 izvesti i blokiranje procesa za pun i prazan bafer
 zastiti deljeni resurs to jest fifo buffer semaforom da ne bi doslo do hazarda
 */
+/*
+Obavezno dozvoliti upis u fifo node fajl sa - sudo chmod a+rw /dev/fifo
+*/
+
 
 #include <linux/kernel.h>
 #include <linux/string.h>
@@ -27,6 +31,7 @@ zastiti deljeni resurs to jest fifo buffer semaforom da ne bi doslo do hazarda
 DECLARE_WAIT_QUEUE_HEAD(readQ);
 DECLARE_WAIT_QUEUE_HEAD(writeQ);
 
+//struktura semafor potrebna za realizaciju semafora
 struct semaphore sem;
 
 #define BUFF_SIZE 20
@@ -86,21 +91,27 @@ ssize_t fifo_read(struct file *pfile, char __user *buffer, size_t length, loff_t
 		return 0;
 	}
 
+	//proces zauzima semafor
 	if(down_interruptible(&sem))
 		return -ERESTARTSYS;
 	while(pos == 0)
 	{
+		/*ulazi while petlju, oslobadja semafor kako bi neki drugi proces mogao da upise i
+		blokira se u redu cekanja citanja*/
 		up(&sem);
-		/*Ukoliko nista nije upisano proces se blokira u ovoj liniji i smestau red cekanja
+		/*Ukoliko nista nije upisano proces se blokira u ovoj liniji i smesta u red cekanja
 		za citanje readQ */
 		if(wait_event_interruptible(readQ,(pos>0)))
 			return -ERESTARTSYS;
 		/*Nakon budjenja procesa koji cekaju u redu za cigtanje readQ ova funkcija
 		nastavlja da se izvrsava odavde. Proces citanja se budi na kraju funkcije za upis,
 		gde se poziva funkcija za budjenje procesa citanja wake_up_interruptible(&readQ)*/
+
+		//ponovo zauzima semafor nakon sto je probudjen iz reda cekanja na citanje
 		if(down_interruptible(&sem))
 			return -ERESTARTSYS;
 	}//while(pos==0)
+
 	if(pos > 0)
 	{
 		//pos--; dekrementiranje ostalo od lifo buffera
@@ -132,7 +143,7 @@ ssize_t fifo_read(struct file *pfile, char __user *buffer, size_t length, loff_t
 			printk(KERN_WARNING "Fifo is empty\n"); 
 	}
 
-	up(&sem);
+	up(&sem);//oslobadanje semafora izlazak iz kriticne sekcije
 	wake_up_interruptible(&writeQ);//ova linija budi procese koji cekaju u redu za upis
 	return len;
 }
@@ -244,11 +255,16 @@ ssize_t fifo_write(struct file *pfile, const char __user *buffer, size_t length,
 		printk(KERN_WARNING "Fifo is full\n"); 
 	}//else(pos<16)
 
-	label1:
 
-	up(&sem);
-	//ovom linijom budimo procese u redu cekanja za citanje, readQ da oslobode mesto
+	//ovo iznad je u kriticnoj sekciji zasticeno semaforom
+	up(&sem);/*povecava semafor za 1 i inicira pozivanje suspendovanih procesa koji cekaju
+	na semafor, cime proces izlazi iz kriticne sekcije*/
+
+	//ovom linijom budimo procese u redu cekanja za citanje, readQ da oslobode mesto u baferu
 	wake_up_interruptible(&readQ);
+
+	label1:/*ova labela je skok ukoliko se unosi num=broj i ona je van kriticne sekcije posto
+	menjanje vrednosti n moze da radi samo jedan proces, nema potrebe da bude u kriticnoj sekciji*/
 
 	return length;
 }
@@ -259,6 +275,11 @@ static int __init fifo_init(void)
 	int i=0;
 
 	sema_init(&sem,1);//semaphore initialization
+	/*Inicijalizacija semafora, u globalnu strukturu sem, vrednost 1 oznacava da
+	samo jedan proces moze pristupiti semaforu u jednom trenutku, jer se pristupom
+	kriticnoj sekciji sem dekrementira sa 1 na 0 i time se sprecava mogucnost drugog
+	procesa da izvrsava kod kriticne sekcije jer je ponovnim dekrementiranjem -1, pa
+	ce drugi proces biti blokiran dok sem ne bude ponovo 1, odnsono prvi proces ne zavrsi*/
 
 	//Initialize array
 	for (i=0; i<16; i++)
