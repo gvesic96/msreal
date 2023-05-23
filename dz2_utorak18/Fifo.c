@@ -188,7 +188,7 @@ ssize_t fifo_write(struct file *pfile, const char __user *buffer, size_t length,
 
 	if(down_interruptible(&sem))
 		return -ERESTARTSYS;
-	while(pos == 10)
+	while(pos == 16)
 	{
 		up(&sem);
 		/*ukoliko je buffer pun, proces smestamo u red cekanja za upis, writeQ i blokira se
