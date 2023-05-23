@@ -11,6 +11,7 @@ zastiti deljeni resurs to jest fifo buffer semaforom da ne bi doslo do hazarda
 Obavezno dozvoliti upis u fifo node fajl sa - sudo chmod a+rw /dev/fifo
 */
 
+//KOMANDE CAT I ECHO POKRETATI SA & NA KRAJU DA BI SE KREIRAO PROCES U POZADINI !!!
 
 #include <linux/kernel.h>
 #include <linux/string.h>
@@ -190,7 +191,8 @@ ssize_t fifo_write(struct file *pfile, const char __user *buffer, size_t length,
 		return -ERESTARTSYS;
 	while(pos == 16)
 	{
-		up(&sem);
+		up(&sem);//oslobadjanje semafora JAKO VAZNO! da ne bi blokirao sve ostale procese
+
 		/*ukoliko je buffer pun, proces smestamo u red cekanja za upis, writeQ i blokira se
 		u ovoj liniji*/
 		if(wait_event_interruptible(writeQ,(pos<16)))
@@ -264,8 +266,7 @@ ssize_t fifo_write(struct file *pfile, const char __user *buffer, size_t length,
 	//ovom linijom budimo procese u redu cekanja za citanje, readQ da oslobode mesto u baferu
 	wake_up_interruptible(&readQ);
 
-	label1:/*ova labela je skok ukoliko se unosi num=broj i ona je van kriticne sekcije posto
-	menjanje vrednosti n moze da radi samo jedan proces, nema potrebe da bude u kriticnoj sekciji*/
+	label1:
 
 	return length;
 }
