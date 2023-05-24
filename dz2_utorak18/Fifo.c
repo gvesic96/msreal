@@ -214,8 +214,13 @@ ssize_t fifo_write(struct file *pfile, const char __user *buffer, size_t length,
 			while(buff[i] != ';'){
 				buff_tmp[i] = buff[i];
 				i++;
+				if(buff_tmp[i-1] == '\0' || i == 19){
+					buff_tmp[0]='e';//error bit disables if(0b || 0B)
+					break;
+					}//safety feature buff_tmp size is 20, buff 200
 			}
 			buff_tmp[i] = '\0';
+
 
 			if(buff_tmp[0] == '0' && (buff_tmp[1] == 'b' || buff_tmp[1] == 'B')){
 				ret = kstrtoint(buff_tmp+2,2,&value);
@@ -233,14 +238,14 @@ ssize_t fifo_write(struct file *pfile, const char __user *buffer, size_t length,
 				}
 			}
 
-			//Checking if number is in allowed range of 0 to 255, 8bit
-			if(value > 255 || value < 0)
+			//Checking if number casted right ret =0 and in range 0 to 255, 8bit
+			if(ret == 0 && (value > 255 || value < 0))
 			{
 				ret = 1;//if not in range, wont be written into buffer
 				printk(KERN_WARNING "8 bit maximum range exceeded, data discarded");
 			}
 
-			if(ret==0)//one parameter parsed from input string
+			if(ret == 0)//one parameter parsed from input string
 			{
 				printk(KERN_INFO "Succesfully wrote value %d", value);
 				fifo[pos] = value;
@@ -248,7 +253,7 @@ ssize_t fifo_write(struct file *pfile, const char __user *buffer, size_t length,
 			}
 			else
 			{
-				printk(KERN_WARNING "Wrong command format\n");
+				printk(KERN_WARNING "Wrong command format\n");//ret = 1
 			}
 
 		}//while
