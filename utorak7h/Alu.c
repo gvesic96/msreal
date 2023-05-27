@@ -47,7 +47,7 @@ static struct cdev *my_cdev;
 int regA,regB,regC,regD;
 int endRead = 0;
 int result, carry;
-
+int read_mode = 1;
 
 int alu_open(struct inode *pinode, struct file *pfile);
 int alu_close(struct inode *pinode, struct file *pfile);
@@ -134,13 +134,18 @@ ssize_t alu_read(struct file *pfile, char __user *buffer, size_t length, loff_t 
 ssize_t alu_write(struct file *pfile, const char __user *buffer, size_t length, loff_t *offset)
 {
 	char buff[BUFF_SIZE];
-
+	char buff_tmp[7] = {'f','o','r','m','a','t','='};
 	char buff_tmp2[3] = {'r','e','g'};
+	char buff_tmp3[9] = {'d','e','c','h','e','x','b','i','n'};
 	//int value;
 	int ret;
 	int i;
 	int reg1 = 0;
 	int reg2 = 0;
+	int tmp;
+
+	tmp = read_mode; //setting current value of reading mode
+
 
 	ret = copy_from_user(buff, buffer, length);//successful execution returns 0
 	/*buff je kernel niz gde se smesta buffer je niz u kurisnickom prostoru,
@@ -151,6 +156,47 @@ ssize_t alu_write(struct file *pfile, const char __user *buffer, size_t length, 
 		return -EFAULT;
 
 	buff[length-1] = '\0'; //niz krece od nula a length je ukupan broj clanova niza buffer
+
+	for(i=0;i<7;i++){
+		if(buff[i] == buff_tmp[i]){
+			ret = 1;
+		}else{
+			ret = 0; break;
+		}
+	}
+
+	if(ret == 1){
+
+		for(i=0;i<3;i++){
+			if(buff[i+7] == buff_tmp3[i]){
+				tmp = 1; ret = 0;}
+			else {ret = 1; break;}
+		}
+
+		for(i=0;i<3;i++){
+			if(buff[i+7] == buff_tmp3[i+3]){
+				tmp = 2; ret = 0;}
+			else {ret = 1; break;}
+		}
+
+		for(i=0;i<3;i++){
+			if(buff[i+7] == buff_tmp3[i+6]){
+				tmp = 3; ret = 0;}
+			else {ret =1; break;}
+		}
+		if(ret == 0){
+			read_mode = tmp;
+			switch(read_mode){
+				case 1: printk(KERN_INFO "Reading format set to decimal\n"); break;
+				case 2: printk(KERN_INFO "Reading format set to hexadecimal\n"); break;
+				case 3: printk(KERN_INFO "Reading format set to binary\n"); break;
+				default: printk(KERN_INFO "Reading format is %d\n", read_mode); break;
+			}
+		}else{printk(KERN_WARNING "Wrong command format - Reading format not changed\n");}
+	goto label1;
+	}
+
+
 
 	for(i=0;i<3;i++){
 		if(buff[i] == buff_tmp2[i]){
