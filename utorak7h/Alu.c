@@ -118,7 +118,7 @@ ssize_t alu_read(struct file *pfile, char __user *buffer, size_t length, loff_t 
 		case 1: {len = scnprintf(buff, BUFF_SIZE, "%d", result);
 			break;
 			}
-		case 2: {len = scnprintf(buff, BUFF_SIZE, "%d", result);
+		case 2: {len = scnprintf(buff, BUFF_SIZE, "%x", result);
 			break;
 			}
 		case 3: {
