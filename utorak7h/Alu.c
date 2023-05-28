@@ -66,13 +66,13 @@ struct file_operations my_fops =
 
 int alu_open(struct inode *pinode, struct file *pfile) 
 {
-		printk(KERN_INFO "Succesfully opened fifo\n");
+		printk(KERN_INFO "Succesfully opened alu\n");
 		return 0;
 }
 
 int alu_close(struct inode *pinode, struct file *pfile) 
 {
-		printk(KERN_INFO "Succesfully closed fifo\n");
+		printk(KERN_INFO "Succesfully closed alu\n");
 		return 0;
 }
 
@@ -82,6 +82,9 @@ ssize_t alu_read(struct file *pfile, char __user *buffer, size_t length, loff_t 
 	char buff[BUFF_SIZE];
 	long int len = 0;
 
+	int mask = 1;
+	char tmp[BUFF_SIZE];
+	int i, j;
 
 	if (endRead){
 		endRead = 0;
@@ -110,7 +113,29 @@ ssize_t alu_read(struct file *pfile, char __user *buffer, size_t length, loff_t 
 			return -ERESTARTSYS;
 		*/
 
-		len = scnprintf(buff, BUFF_SIZE, "%d ", result);
+		switch(read_mode)
+		{
+		case 1: {len = scnprintf(buff, BUFF_SIZE, "%d", result);
+			break;
+			}
+		case 2: {len = scnprintf(buff, BUFF_SIZE, "%d", result);
+			break;
+			}
+		case 3: {
+			j=7;
+				for(i=0;i<8;i++){
+				tmp[i] = ((result & (mask<<j)) >> j) + '0';
+				j--;
+				}
+			len = scnprintf(buff, BUFF_SIZE, tmp);
+			break;
+			}
+		default: printk(KERN_INFO "Reading format constant not set...");
+			len = 0;
+			break;
+		}
+
+		//len = scnprintf(buff, BUFF_SIZE, "%d ", result);
 		ret = copy_to_user(buffer, buff, len);
 
 		if(ret)
@@ -172,18 +197,21 @@ ssize_t alu_write(struct file *pfile, const char __user *buffer, size_t length, 
 				tmp = 1; ret = 0;}
 			else {ret = 1; break;}
 		}
-
+		if(ret == 1){
 		for(i=0;i<3;i++){
 			if(buff[i+7] == buff_tmp3[i+3]){
 				tmp = 2; ret = 0;}
 			else {ret = 1; break;}
 		}
+		}//if
 
+		if(ret == 1){
 		for(i=0;i<3;i++){
 			if(buff[i+7] == buff_tmp3[i+6]){
 				tmp = 3; ret = 0;}
 			else {ret =1; break;}
 		}
+		}//if
 		if(ret == 0){
 			read_mode = tmp;
 			switch(read_mode){
