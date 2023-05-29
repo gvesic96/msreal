@@ -48,6 +48,7 @@ int regA,regB,regC,regD;
 int endRead = 0;
 int result, carry;
 int read_mode = 1;
+int read_count = 0;
 
 int alu_open(struct inode *pinode, struct file *pfile);
 int alu_close(struct inode *pinode, struct file *pfile);
@@ -81,77 +82,102 @@ ssize_t alu_read(struct file *pfile, char __user *buffer, size_t length, loff_t 
 	int ret;
 	char buff[BUFF_SIZE];
 	long int len = 0;
-
+	int tmp_result;
 	int mask = 1;
 	char tmp[BUFF_SIZE];
 	int i, j;
 
 	if (endRead){
 		endRead = 0;
+		read_count = 0;//reset read counter to 0
+
+		result = 0;
+		carry = 0;
+
+		wake_up_interruptible(&writeQ); //waking up processes waiting for write
 		return 0;
 	}
 
-	/*
+
 	//proces zauzima semafor
 	if(down_interruptible(&sem))
 		return -ERESTARTSYS;
-	while(pos == 0)
+	while(result == 0 && carry == 0)
 	{
-		ulazi while petlju, oslobadja semafor kako bi neki drugi proces mogao da upise i
-		blokira se u redu cekanja citanja
+		/*ulazi while petlju, oslobadja semafor kako bi neki drugi proces mogao da upise i
+		blokira se u redu cekanja citanja*/
 		up(&sem);
-		Ukoliko nista nije upisano proces se blokira u ovoj liniji i smesta u red cekanja
-		za citanje readQ
-		if(wait_event_interruptible(readQ,(pos>0)))
+		/*Ukoliko nista nije upisano proces se blokira u ovoj liniji i smesta u red cekanja
+		za citanje readQ*/
+		if(wait_event_interruptible(readQ, (result !=0 || carry != 0)))
 			return -ERESTARTSYS;
-		Nakon budjenja procesa koji cekaju u redu za cigtanje readQ ova funkcija
+		/*Nakon budjenja procesa koji cekaju u redu za cigtanje readQ ova funkcija
 		nastavlja da se izvrsava odavde. Proces citanja se budi na kraju funkcije za upis,
-		gde se poziva funkcija za budjenje procesa citanja wake_up_interruptible(&readQ)
+		gde se poziva funkcija za budjenje procesa citanja wake_up_interruptible(&readQ)*/
 
 		//ponovo zauzima semafor nakon sto je probudjen iz reda cekanja na citanje
 		if(down_interruptible(&sem))
 			return -ERESTARTSYS;
-		*/
+	}
 
-		switch(read_mode)
-		{
-		case 1: {len = scnprintf(buff, BUFF_SIZE, "%d", result);
+
+		if(read_count == 0){
+		  j=7;
+		  for(i=0;i<8;i++){
+			tmp[i] = ((result & (mask<<j)) >> j) + '0';
+			j--;
+		  }
+		  tmp[8] = '\0';
+		  ret = kstrtoint(tmp,2,&tmp_result);
+
+		  if(ret == 0){
+		  switch(read_mode)
+		  {
+		  case 1: {//decimal
+			len = scnprintf(buff, BUFF_SIZE, "dec%d", result);
 			break;
 			}
-		case 2: {len = scnprintf(buff, BUFF_SIZE, "%x", result);
+
+		  case 2: {//hexadecimal
+			len = scnprintf(buff, BUFF_SIZE, "0x%x", tmp_result);
 			break;
 			}
-		case 3: {
-			j=7;
-				for(i=0;i<8;i++){
-				tmp[i] = ((result & (mask<<j)) >> j) + '0';
-				j--;
-				}
-			len = scnprintf(buff, BUFF_SIZE, tmp);
+
+		  case 3: {//binary
+			len = scnprintf(buff, BUFF_SIZE, "0b%s", tmp);
 			break;
 			}
-		default: printk(KERN_INFO "Reading format constant not set...");
+		  default:{printk(KERN_INFO "Reading format constant not set...");
 			len = 0;
 			break;
+			}
+		  }//switch
+		  }//if
+		  else{printk(KERN_INFO "Unsuccessful casting of tmp array \n");}
+		}
+
+		if(read_count == 1){
+			len = scnprintf(buff, BUFF_SIZE, " %d ", carry);
+			endRead = 1;//stop reading after second iteration
 		}
 
 		//len = scnprintf(buff, BUFF_SIZE, "%d ", result);
 		ret = copy_to_user(buffer, buff, len);
+		read_count++;//increment read counter
 
 		if(ret)
 			return -EFAULT;
 
 
-		endRead = 1;
-		printk(KERN_INFO "Succesfully read\n");//uspesno procitan podatak fifo[0]
+		printk(KERN_INFO "Succesfully read\n");
 
 		//cat command will keep calling again until len doesnt come to 0 which is EOF
 
 
-	/*
+
 	up(&sem);//oslobadanje semafora izlazak iz kriticne sekcije
-	wake_up_interruptible(&writeQ);//ova linija budi procese koji cekaju u redu za upis
-	*/
+//	wake_up_interruptible(&writeQ);//ova linija budi procese koji cekaju u redu za upis
+
 
 	return len;
 }
@@ -162,7 +188,7 @@ ssize_t alu_write(struct file *pfile, const char __user *buffer, size_t length, 
 	char buff_tmp[7] = {'f','o','r','m','a','t','='};
 	char buff_tmp2[3] = {'r','e','g'};
 	char buff_tmp3[9] = {'d','e','c','h','e','x','b','i','n'};
-	//int value;
+	int value;
 	int ret;
 	int i;
 	int reg1 = 0;
@@ -182,6 +208,7 @@ ssize_t alu_write(struct file *pfile, const char __user *buffer, size_t length, 
 
 	buff[length-1] = '\0'; //niz krece od nula a length je ukupan broj clanova niza buffer
 
+	//setting reading format buff_tmp = format=
 	for(i=0;i<7;i++){
 		if(buff[i] == buff_tmp[i]){
 			ret = 1;
@@ -191,12 +218,13 @@ ssize_t alu_write(struct file *pfile, const char __user *buffer, size_t length, 
 	}
 
 	if(ret == 1){
-
+		//deremining format dec
 		for(i=0;i<3;i++){
 			if(buff[i+7] == buff_tmp3[i]){
 				tmp = 1; ret = 0;}
 			else {ret = 1; break;}
 		}
+		//determining format hex
 		if(ret == 1){
 		for(i=0;i<3;i++){
 			if(buff[i+7] == buff_tmp3[i+3]){
@@ -204,7 +232,7 @@ ssize_t alu_write(struct file *pfile, const char __user *buffer, size_t length, 
 			else {ret = 1; break;}
 		}
 		}//if
-
+		//determining format bin
 		if(ret == 1){
 		for(i=0;i<3;i++){
 			if(buff[i+7] == buff_tmp3[i+6]){
@@ -212,7 +240,7 @@ ssize_t alu_write(struct file *pfile, const char __user *buffer, size_t length, 
 			else {ret =1; break;}
 		}
 		}//if
-		if(ret == 0){
+		if(ret == 0 && buff[10]=='\0'){
 			read_mode = tmp;
 			switch(read_mode){
 				case 1: printk(KERN_INFO "Reading format set to decimal\n"); break;
@@ -225,7 +253,24 @@ ssize_t alu_write(struct file *pfile, const char __user *buffer, size_t length, 
 	}
 
 
+//write processes blocking here... CRITICAL SECTION
+	//taking semaphore
+	if(down_interruptible(&sem))
+		return -ERESTARTSYS;
 
+	while(result!= 0 || carry != 0){
+		up(&sem);//freeing semaphore
+
+		//blocking process regarding condition
+		if(wait_event_interruptible(writeQ, (result == 0 && carry == 0)))
+			return -ERESTARTSYS;
+		//taking semaphore
+		if(down_interruptible(&sem))
+			return -ERESTARTSYS;
+	}
+
+
+	//checking for register setting buff_tmp2 = reg
 	for(i=0;i<3;i++){
 		if(buff[i] == buff_tmp2[i]){
 			ret=1;
@@ -233,76 +278,84 @@ ssize_t alu_write(struct file *pfile, const char __user *buffer, size_t length, 
 			ret=0; break;}
 	}
 
-	if(ret == 1){
-		if(buff[3] == 'A' && buff[4] == '='){
-			ret = kstrtoint(buff+5,10,&regA);
-			if(!ret) printk(KERN_INFO "Register A set to %d \n", regA);
-		}else if(buff[3] == 'B' && buff[4] == '='){
-			ret = kstrtoint(buff+5,10,&regB);
-			if(!ret) printk(KERN_INFO "Register B set to %d \n", regB);
-		      }else if(buff[3] == 'C' && buff[4] == '='){
-				ret = kstrtoint(buff+5,10,&regC);
-				if(!ret) printk(KERN_INFO "Register C set to %d \n", regC);
-			    }else if(buff[3] == 'D' && buff[4] == '='){
-					ret = kstrtoint(buff+5,10,&regD);
-					if(!ret) printk(KERN_INFO "Register D set to %d \n", regD);
-				  }
-		if(ret == 0){
-			printk(KERN_INFO "Casted successfully \n");
-			goto label1;
-		}
+	if(ret == 1 && buff[4] == '='){
+		ret = kstrtoint(buff+5,10,&value);
 	}
 
+	//casted successfully, ret = 0
+	if(ret == 0){
+		if(buff[3]=='A' || buff[3]=='B' || buff[3]=='C' || buff[3]=='D'){
+		  if(value<=255 && value>=0){
+			switch(buff[3])
+			{
+			case 'A': regA=value; printk(KERN_INFO "Register A set to %d \n", regA); break;
+			case 'B': regB=value; printk(KERN_INFO "Register B set to %d \n", regB); break;
+			case 'C': regC=value; printk(KERN_INFO "Register C set to %d \n", regC); break;
+			case 'D': regD=value; printk(KERN_INFO "Register D set to %d \n", regD); break;
+			default: ret=1; printk(KERN_INFO "Something went wrong: reg value not changed\n");
+				break;
+			}
+		  }
+		  else{printk(KERN_INFO "Allowed range 0-255 exceeded \n");}
+		}else{printk(KERN_WARNING "Wrong command format\n");}
 
+	}else{ret = 1;}
+
+
+
+	//checking for operation regA+regB / regA*regB / regA-regB / regA/regB
 	i=0;
 	while(buff[i] != '\0')
 	{
 		i++;
 	}
 
-	if(i == 9 && ret == 1) //ret = 1 when first 3 characters are reg
+	if(i == 9 && ret == 1) //ret = 1 when first 3 characters are reg and unsuccessful cast
 	{
-
-	switch(buff[3])
-	{
+	  switch(buff[3])
+	  {
 		case 'A': reg1 = regA; break;
 		case 'B': reg1 = regB; break;
 		case 'C': reg1 = regC; break;
 		case 'D': reg1 = regD; break;
 		default: reg1 = 0; printk(KERN_INFO"Operand 1 not set\n"); ret=0; break;
-	}
+	  }
 
-	switch(buff[8])
-	{
+	  switch(buff[8])
+	  {
 		case 'A': reg2 = regA; break;
 		case 'B': reg2 = regB; break;
 		case 'C': reg2 = regC; break;
 		case 'D': reg2 = regD; break;
 		default: reg2 = 0; printk(KERN_INFO "Operand 2 not set\n"); ret=0; break;
-	}
+	  }
 
-	switch(buff[4])
-	{
+	  switch(buff[4])
+	  {
 		case '+': result = reg1 + reg2; break;
 		case '-': result = reg1 - reg2; break;
 		case '*': result = reg1 * reg2; break;
 		case '/': result = reg1 / reg2; break;
 		default: printk(KERN_INFO "Operation not set\n"); ret=0; break;
-	}
+	  }
 
-	}else{ret = 0;}
+	carry = (result & (1<<8)) >> 8; //bit number 9 is carry bit for overflow
 
 	if(!ret) printk(KERN_WARNING "Wrong command format\n");
 
-/*
+	}//if
+
+
+
+
 
 	//ovo iznad je u kriticnoj sekciji zasticeno semaforom
-	up(&sem);povecava semafor za 1 i inicira pozivanje suspendovanih procesa koji cekaju
+	up(&sem);/*povecava semafor za 1 i inicira pozivanje suspendovanih procesa koji cekaju
 	na semafor, cime proces izlazi iz kriticne sekcije
+	*/
 
 	//ovom linijom budimo procese u redu cekanja za citanje, readQ da oslobode mesto u baferu
 	wake_up_interruptible(&readQ);
-	*/
 
 	label1:
 
@@ -321,7 +374,7 @@ static int __init alu_init(void)
 	result = 0;
 	carry = 0;
 
-	//sema_init(&sem,1);//semaphore initialization
+	sema_init(&sem,1);//semaphore initialization
 	/*Inicijalizacija semafora, u globalnu strukturu sem, vrednost 1 oznacava da
 	samo jedan proces moze pristupiti semaforu u jednom trenutku, jer se pristupom
 	kriticnoj sekciji sem dekrementira sa 1 na 0 i time se sprecava mogucnost drugog
