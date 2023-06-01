@@ -7,18 +7,35 @@
 int main()
 {
 	FILE* fp;
-	char expression[10];
+	char input_string[8];
+	char cmd_exit[8] = {'e','x','i','t','\0'};
 
 	int operand1, operand2 = 0;
 	char operation = '0';
+	int i = 0;
+	int ret = 0;
 
 	while(1)
 	{
 
-		printf("Unesite izraz u obliku broj+broj: ");
-		scanf("%s", expression);
+		printf("Unesite izraz ili komandu: ");
+		scanf("%s", input_string);
 
-		sscanf(expression, "%d%c%d", &operand1, &operation, &operand2);
+		ret = 0;
+		i = 0;
+		while(input_string[i] != '\0')
+		{
+		  if(input_string[i] == cmd_exit[i]){
+		    ret = 1;
+		  }else{
+		    ret = 0; break;
+		  }
+		  i++;
+		}
+
+		if(ret == 1) break;
+
+		sscanf(input_string, "%d%c%d", &operand1, &operation, &operand2);
 
 		if(operand1){
 
@@ -65,17 +82,32 @@ int main()
 
 		switch(operation)
 		{
-		case '+': fputs("regA+regB ", fp); break;
-		case '-': fputs("regA-regB ", fp); break;
-		case '*': fputs("regA*regB ", fp); break;
-		case '/': fputs("regA/regB ", fp); break;
-		default: puts("Operation not set."); break;
+		case '+': fputs("regA+regB\n", fp); ret=1; break;
+		case '-': fputs("regA-regB\n", fp); ret=1; break;
+		case '*': fputs("regA*regB\n", fp); ret=1; break;
+		case '/': fputs("regA/regB\n", fp); ret=1; break;
+		default: puts("Operation not set."); ret=0; break;
 		}
 
 		if(fclose(fp)){
 			printf("Problem pri zatvaranju /dev/alu\n");
 			return -1;
 		}
+
+
+		//TREBA DODATI CITANJE REZULTATA
+		/*if(ret==1){
+
+		  fp=fopen("/dev/alu", "r");
+		  if(fp==NULL){
+			printf("Problem pri otvaranju /dev/alu\n");
+			return -1;
+		  }
+		  
+
+
+		}
+		*/
 
 
 	}
