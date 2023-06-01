@@ -15,6 +15,10 @@ int main()
 	int i = 0;
 	int ret = 0;
 
+
+	char *str;//za dimanicku alokaciju stringa
+	size_t num_of_bytes = 12;
+
 	while(1)
 	{
 
@@ -96,18 +100,25 @@ int main()
 
 
 		//TREBA DODATI CITANJE REZULTATA
-		/*if(ret==1){
+		if(ret==1){
 
 		  fp=fopen("/dev/alu", "r");
 		  if(fp==NULL){
 			printf("Problem pri otvaranju /dev/alu\n");
 			return -1;
 		  }
-		  
 
+		  str = (char *)malloc(num_of_bytes+1);
+		  getline(&str, &num_of_bytes, fp);
 
+		  if(fclose(fp)){
+			printf("Problem pri zatvaranju /dev/alu\n");
+			return -1;
+		  }
 		}
-		*/
+
+		printf("Procitani reuzltat (string) je: %s\n", str);
+		free (str);
 
 
 	}
